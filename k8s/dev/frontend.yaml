@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: terra-frontend
+  labels:
+    app: terra-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: terra-frontend
+  template:
+    metadata:
+      labels:
+        app: terra-frontend
+    spec:
+      containers:
+      - name: terra-frontend
+        image: terra-frontend:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 3000
+        env:
+        - name: REACT_APP_API_BASE_URL
+          value: http://terra-backend:8000/api
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: terra-frontend
+spec:
+  selector:
+    app: terra-frontend
+  ports:
+  - port: 3000
+    targetPort: 3000
+  type: ClusterIP

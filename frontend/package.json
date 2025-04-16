@@ -3,14 +3,19 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@tailwindcss/aspect-ratio": "^0.4.2",
+    "@tailwindcss/forms": "^0.5.10",
+    "@tailwindcss/line-clamp": "^0.4.4",
+    "@tailwindcss/typography": "^0.5.16",
     "axios": "^1.6.5",
+    "leaflet": "^1.9.4",
+    "prop-types": "^15.8.1",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-redux": "^9.1.0",
     "react-router-dom": "^6.21.2",
     "redux": "^5.0.1",
-    "redux-thunk": "^3.1.0",
-    "leaflet": "^1.9.4"
+    "redux-thunk": "^3.1.0"
   },
   "scripts": {
     "setup": "npm install && npm run additional-setup-steps",
@@ -41,7 +46,10 @@
     "@testing-library/jest-dom": "^6.2.0",
     "@testing-library/react": "^14.1.2",
     "@testing-library/user-event": "^14.5.2",
-    "react-scripts": "5.0.1"
+    "autoprefixer": "^10.4.21",
+    "postcss": "^8.5.3",
+    "react-scripts": "5.0.1",
+    "tailwindcss": "^4.1.4"
   },
   "overrides": {
     "@babel/plugin-transform-private-property-in-object": "^7.23.4",

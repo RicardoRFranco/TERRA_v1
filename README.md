@@ -25,3 +25,4 @@ A modern web application with Python FastAPI backend, React frontend, and Postgr
    git clone https://github.com/RicardoRFranco/terra-app.git
    cd terra-app
    .\scripts\setup-dev.ps1
+   npm run setup

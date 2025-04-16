@@ -9,9 +9,11 @@
     "react-redux": "^9.1.0",
     "react-router-dom": "^6.21.2",
     "redux": "^5.0.1",
-    "redux-thunk": "^3.1.0"
+    "redux-thunk": "^3.1.0",
+    "leaflet": "^1.9.4"
   },
   "scripts": {
+    "setup": "npm install && npm run additional-setup-steps",
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",

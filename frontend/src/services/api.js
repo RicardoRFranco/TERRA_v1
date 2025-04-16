@@ -1,93 +1,270 @@
 import axios from 'axios';
 
-// Create axios instance with base URL and default config
+/**
+ * Base API configuration
+ */
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:8000/api';
+
+/**
+ * Axios instance for API requests
+ */
 const api = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || 'http://localhost:5000/api',
-  headers: {
-    'Content-Type': 'application/json'
-  }
+    baseURL: API_BASE_URL,
+    headers: {
+        'Content-Type': 'application/json',
+    },
+    timeout: 10000, // 10 seconds timeout
 });
 
-// Add request interceptor to add auth token to requests
-api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('token');
+/**
+ * Auth token management
+ */
+const AUTH_TOKEN_KEY = 'terra_auth_token';
+const REFRESH_TOKEN_KEY = 'terra_refresh_token';
+
+/**
+ * Set auth token for API requests
+ * @param {string} token - JWT token
+ */
+const setAuthToken = (token) => {
     if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+        localStorage.setItem(AUTH_TOKEN_KEY, token);
+        api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    } else {
+        localStorage.removeItem(AUTH_TOKEN_KEY);
+        delete api.defaults.headers.common['Authorization'];
     }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  }
+};
+
+/**
+ * Set refresh token in local storage
+ * @param {string} token - Refresh token
+ */
+const setRefreshToken = (token) => {
+    if (token) {
+        localStorage.setItem(REFRESH_TOKEN_KEY, token);
+    } else {
+        localStorage.removeItem(REFRESH_TOKEN_KEY);
+    }
+};
+
+/**
+ * Get stored auth token
+ * @returns {string|null} Stored auth token
+ */
+const getAuthToken = () => {
+    return localStorage.getItem(AUTH_TOKEN_KEY);
+};
+
+/**
+ * Get stored refresh token
+ * @returns {string|null} Stored refresh token
+ */
+const getRefreshToken = () => {
+    return localStorage.getItem(REFRESH_TOKEN_KEY);
+};
+
+// Initialize auth token from localStorage if available
+const token = getAuthToken();
+if (token) {
+    setAuthToken(token);
+}
+
+/**
+ * Request interceptor for handling auth tokens
+ */
+api.interceptors.request.use(
+    config => {
+        const token = getAuthToken();
+        if (token) {
+            config.headers.Authorization = `Bearer ${token}`;
+        }
+        return config;
+    },
+    error => Promise.reject(error)
 );
 
-// Add response interceptor to handle errors
+/**
+ * Response interceptor for handling token refresh
+ */
 api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    // Handle specific error statuses
-    if (error.response) {
-      // Authentication errors
-      if (error.response.status === 401) {
-        localStorage.removeItem('token');
-        // If using history outside of components:
-        // window.location.href = '/login';
-      }
-      
-      // Format error response
-      const errorMessage = error.response.data.message || 'An error occurred';
-      return Promise.reject(new Error(errorMessage));
+    response => response,
+    async error => {
+        const originalRequest = error.config;
+        
+        // If error is 401 and we haven't tried to refresh token yet
+        if (error.response?.status === 401 && !originalRequest._retry) {
+            originalRequest._retry = true;
+            
+            try {
+                const refreshToken = getRefreshToken();
+                if (refreshToken) {
+                    // Try to get a new token
+                    const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
+                        refresh_token: refreshToken
+                    });
+                    
+                    const { access_token } = response.data;
+                    
+                    // Update token
+                    setAuthToken(access_token);
+                    
+                    // Retry original request
+                    return api(originalRequest);
+                }
+            } catch (refreshError) {
+                // Clear tokens on refresh failure
+                setAuthToken(null);
+                setRefreshToken(null);
+                
+                // Redirect to login (you'll need to implement a redirect mechanism)
+                window.dispatchEvent(new CustomEvent('auth:logout'));
+            }
+        }
+        
+        return Promise.reject(error);
     }
-    
-    if (error.request) {
-      // Request made but no response received
-      return Promise.reject(new Error('No response from server. Please check your connection.'));
-    }
-    
-    // Other errors
-    return Promise.reject(error);
-  }
 );
 
-// Auth services
-export const authService = {
-  login: (credentials) => api.post('/auth/login', credentials),
-  register: (userData) => api.post('/auth/register', userData),
-  logout: () => {
-    localStorage.removeItem('token');
-    return Promise.resolve();
-  },
-  getCurrentUser: () => api.get('/auth/me')
+// API service functions
+const apiService = {
+    // Auth endpoints
+    auth: {
+        /**
+         * Register a new user
+         * @param {Object} userData - User registration data
+         * @returns {Promise} Registration response
+         */
+        register: (userData) => api.post('/auth/register', userData),
+        
+        /**
+         * Login a user
+         * @param {string} username - User's username
+         * @param {string} password - User's password
+         * @returns {Promise} Login response with tokens
+         */
+        login: async (username, password) => {
+            const formData = new FormData();
+            formData.append('username', username);
+            formData.append('password', password);
+            
+            const response = await api.post('/auth/token', formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data',
+                },
+            });
+            
+            const { access_token, refresh_token } = response.data;
+            
+            setAuthToken(access_token);
+            setRefreshToken(refresh_token);
+            
+            return response;
+        },
+        
+        /**
+         * Logout the current user
+         */
+        logout: () => {
+            setAuthToken(null);
+            setRefreshToken(null);
+            window.dispatchEvent(new CustomEvent('auth:logout'));
+        },
+        
+        /**
+         * Check if user is authenticated
+         * @returns {boolean} Authentication status
+         */
+        isAuthenticated: () => !!getAuthToken(),
+    },
+    
+    // Route endpoints
+    routes: {
+        /**
+         * Get all routes for the current user
+         * @param {boolean} publicOnly - Whether to retrieve only public routes
+         * @returns {Promise} Routes response
+         */
+        getRoutes: (publicOnly = false) => api.get(`/routes?public_only=${publicOnly}`),
+        
+        /**
+         * Get a specific route by ID
+         * @param {number} routeId - ID of the route to retrieve
+         * @returns {Promise} Route response
+         */
+        getRoute: (routeId) => api.get(`/routes/${routeId}`),
+        
+        /**
+         * Create a new route
+         * @param {Object} routeData - Route creation data
+         * @returns {Promise} Created route response
+         */
+        createRoute: (routeData) => api.post('/routes', routeData),
+        
+        /**
+         * Update an existing route
+         * @param {number} routeId - ID of the route to update
+         * @param {Object} routeData - Updated route data
+         * @returns {Promise} Updated route response
+         */
+        updateRoute: (routeId, routeData) => api.put(`/routes/${routeId}`, routeData),
+        
+        /**
+         * Delete a route
+         * @param {number} routeId - ID of the route to delete
+         * @returns {Promise} Delete response
+         */
+        deleteRoute: (routeId) => api.delete(`/routes/${routeId}`),
+        
+        /**
+         * Import a GPX file
+         * @param {File} file - GPX file to import
+         * @param {string} name - Name for the new route
+         * @param {string} description - Description for the new route
+         * @param {boolean} isPublic - Whether the route should be public
+         * @returns {Promise} Imported route response
+         */
+        importGpx: (file, name, description = '', isPublic = false) => {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('name', name);
+            formData.append('description', description);
+            formData.append('is_public', isPublic);
+            
+            return api.post('/routes/import-gpx', formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data',
+                },
+            });
+        },
+    },
+    
+    // User endpoints
+    users: {
+        /**
+         * Get current user profile
+         * @returns {Promise} User profile response
+         */
+        getProfile: () => api.get('/users/me'),
+        
+        /**
+         * Update user profile
+         * @param {Object} userData - Updated user data
+         * @returns {Promise} Updated profile response
+         */
+        updateProfile: (userData) => api.put('/users/me', userData),
+        
+        /**
+         * Change user password
+         * @param {string} currentPassword - Current password
+         * @param {string} newPassword - New password
+         * @returns {Promise} Password change response
+         */
+        changePassword: (currentPassword, newPassword) => api.post('/auth/change-password', {
+            current_password: currentPassword,
+            new_password: newPassword,
+        }),
+    },
 };
 
-// Routes services
-export const routesService = {
-  getRoutes: (userOnly = false) => api.get('/routes', { params: { userOnly } }),
-  getRouteById: (id) => api.get(`/routes/${id}`),
-  createRoute: (routeData) => api.post('/routes', routeData),
-  updateRoute: (id, routeData) => api.put(`/routes/${id}`, routeData),
-  deleteRoute: (id) => api.delete(`/routes/${id}`),
-  importGPX: (routeData) => api.post('/routes/import', routeData)
-};
-
-// User services
-export const userService = {
-  updateProfile: (userData, currentPassword) => 
-    api.put('/users/profile', { userData, currentPassword }),
-  getUserStats: () => api.get('/users/stats'),
-  getPublicProfile: (userId) => api.get(`/users/${userId}`)
-};
-
-// Search services
-export const searchService = {
-  searchRoutes: (query) => api.get('/search/routes', { params: { q: query } }),
-  searchUsers: (query) => api.get('/search/users', { params: { q: query } })
-};
-
-export default {
-  auth: authService,
-  routes: routesService,
-  user: userService,
-  search: searchService
-};
+export default apiService;
